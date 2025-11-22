@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { billingModelsAPI, vendorsAPI } from '../services/api'
 import { BillingModel, Vendor } from '../types'
 import InlineAlert from '../components/InlineAlert'
 import { Trash2 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import SystemStatusBar from '../components/SystemStatusBar'
 
 export default function BillingModels() {
   const queryClient = useQueryClient()
@@ -15,9 +16,12 @@ export default function BillingModels() {
     model_type: 'package',
     monthly_fixed_cost: '',
     cost_per_trip: '',
+    effective_from: new Date().toISOString().slice(0, 10),
   })
   const [showForm, setShowForm] = useState(false)
   const [deleteError, setDeleteError] = useState<string | undefined>(undefined)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [typeFilter, setTypeFilter] = useState<'all' | BillingModel['model_type']>('all')
 
   const { data, isLoading } = useQuery({
     queryKey: ['billingModels-all', selectedTenantId],
@@ -34,7 +38,7 @@ export default function BillingModels() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['billingModels-all'] })
       setShowForm(false)
-      setForm({ vendor_id: '', name: '', model_type: 'package', monthly_fixed_cost: '', cost_per_trip: '' })
+      setForm({ vendor_id: '', name: '', model_type: 'package', monthly_fixed_cost: '', cost_per_trip: '', effective_from: new Date().toISOString().slice(0, 10) })
     },
   })
 
@@ -49,11 +53,50 @@ export default function BillingModels() {
 
   const models: BillingModel[] = data || []
 
+  const filteredModels = useMemo(() => {
+    return models.filter((model) => {
+      const matchesType = typeFilter === 'all' || model.model_type === typeFilter
+      const text = `${model.name} ${model.vendor_id}`.toLowerCase()
+      return matchesType && text.includes(searchTerm.toLowerCase())
+    })
+  }, [models, searchTerm, typeFilter])
+
+  const formPreview = useMemo(() => {
+    if (!form.name || !form.vendor_id) {
+      return 'Select a vendor and model name to see projected billing.'
+    }
+    const monthly = Number(form.monthly_fixed_cost || 0)
+    const perTrip = Number(form.cost_per_trip || 0)
+    const projection = monthly + perTrip * 20
+    return `If the vendor runs 20 trips during the period starting ${form.effective_from}, total payout will be approximately ₹${projection.toFixed(2)}.`
+  }, [form])
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Billing Models</h1>
         <p className="text-gray-600 mt-2">Configure billing models for vendors</p>
+      </div>
+
+      <SystemStatusBar watchKeys={[['billingModels-all', selectedTenantId]]} />
+
+      <div className="flex flex-wrap gap-4 items-center">
+        <input
+          className="px-3 py-2 border border-gray-300 rounded-lg"
+          placeholder="Search vendor or model"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}
+          className="px-3 py-2 border border-gray-300 rounded-lg"
+        >
+          <option value="all">All types</option>
+          <option value="package">Package</option>
+          <option value="trip_based">Trip based</option>
+          <option value="hybrid">Hybrid</option>
+        </select>
       </div>
 
       <button
@@ -126,6 +169,16 @@ export default function BillingModels() {
               />
             </div>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Effective From</label>
+            <input
+              type="date"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2"
+              value={form.effective_from}
+              onChange={(e) => setForm({ ...form, effective_from: e.target.value })}
+            />
+          </div>
+          <InlineAlert variant="info" title="Live projection" description={formPreview} />
           <button
             onClick={() => mutation.mutate({
               vendor_id: Number(form.vendor_id),
@@ -133,6 +186,7 @@ export default function BillingModels() {
               model_type: form.model_type as BillingModel['model_type'],
               monthly_fixed_cost: form.monthly_fixed_cost ? Number(form.monthly_fixed_cost) : undefined,
               cost_per_trip: form.cost_per_trip ? Number(form.cost_per_trip) : undefined,
+              effective_from: new Date(form.effective_from || new Date().toISOString()).toISOString(),
             })}
             className="bg-primary-600 text-white px-4 py-2 rounded-lg"
             disabled={mutation.isPending}
@@ -158,7 +212,7 @@ export default function BillingModels() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {models.map((model) => (
+              {filteredModels.map((model) => (
                 <tr key={model.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">{model.name}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm uppercase">{model.model_type}</td>

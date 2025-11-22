@@ -4,6 +4,8 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.api.v1.api import api_router
 from app.middleware.tenant import TenantMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
+from time import perf_counter
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -24,6 +26,27 @@ app.add_middleware(
 )
 
 app.add_middleware(TenantMiddleware)
+
+instrumentator = Instrumentator().instrument(app)
+
+
+@app.on_event("startup")
+async def _configure_monitoring() -> None:
+    instrumentator.expose(
+        app,
+        endpoint="/metrics",
+        include_in_schema=False,
+        tags=("monitoring",),
+    )
+
+
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    start = perf_counter()
+    response = await call_next(request)
+    duration_ms = (perf_counter() - start) * 1000
+    response.headers["X-Response-Time"] = f"{duration_ms:.2f}ms"
+    return response
 
 
 @app.exception_handler(Exception)

@@ -1,11 +1,21 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from datetime import datetime
 from decimal import Decimal
 from app.db.session import get_db
 from app.models.invoice import Invoice, InvoiceType, InvoiceStatus
+from app.models.client import Client
+from app.models.vendor import Vendor
+from app.models.trip import Trip
 from app.api.deps import TenantContext, get_tenant_context
+from app.services.cache import (
+    invalidate_dashboard_slice,
+    invalidate_report_windows,
+)
+from app.services.pdf_renderer import build_invoice_pdf
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -30,6 +40,10 @@ class InvoiceUpdate(BaseModel):
     extra_charges: Decimal | None = None
     incentives: Decimal | None = None
     tax_amount: Decimal | None = None
+    base_amount: Decimal | None = None
+    billing_period_start: datetime | None = None
+    billing_period_end: datetime | None = None
+    notes: str | None = None
 
 
 class InvoiceResponse(BaseModel):
@@ -41,8 +55,18 @@ class InvoiceResponse(BaseModel):
     billing_period_start: datetime
     billing_period_end: datetime
     total_trips: int
+    total_distance: Decimal | None
+    total_duration: Decimal | None
+    base_amount: Decimal
+    extra_charges: Decimal
+    incentives: Decimal
+    tax_amount: Decimal
     total_amount: Decimal
     status: InvoiceStatus
+    generated_at: datetime | None
+    due_date: datetime | None
+    paid_at: datetime | None
+    notes: str | None
     
     class Config:
         from_attributes = True
@@ -70,6 +94,19 @@ def create_invoice(
         invoice_vendor_id = invoice_data.vendor_id
 
     total_amount = invoice_data.base_amount + invoice_data.extra_charges + invoice_data.tax_amount - invoice_data.incentives
+
+    trip_metrics = db.query(
+        func.count(Trip.id),
+        func.coalesce(func.sum(Trip.distance_km), 0),
+        func.coalesce(func.sum(Trip.duration_hours), 0),
+    ).filter(
+        Trip.client_id == client_id,
+        Trip.trip_date >= invoice_data.billing_period_start,
+        Trip.trip_date <= invoice_data.billing_period_end,
+    )
+    if invoice_vendor_id:
+        trip_metrics = trip_metrics.filter(Trip.vendor_id == invoice_vendor_id)
+    total_trips, total_distance, total_duration = trip_metrics.first()
     
     new_invoice = Invoice(
         **invoice_data.dict(exclude={"client_id", "vendor_id"}),
@@ -77,12 +114,22 @@ def create_invoice(
         vendor_id=invoice_vendor_id,
         invoice_number=invoice_number,
         total_amount=total_amount,
+        total_trips=total_trips or 0,
+        total_distance=total_distance,
+        total_duration=total_duration,
         generated_at=datetime.utcnow()
     )
     
     db.add(new_invoice)
     db.commit()
     db.refresh(new_invoice)
+
+    invalidate_dashboard_slice(client_id)
+    invalidate_dashboard_slice(None)
+    if invoice_vendor_id:
+        invalidate_dashboard_slice(client_id, invoice_vendor_id)
+        invalidate_dashboard_slice(None, invoice_vendor_id)
+    invalidate_report_windows(client_id=client_id, vendor_id=invoice_vendor_id)
     
     return new_invoice
 
@@ -152,6 +199,12 @@ def update_invoice(
 
     db.commit()
     db.refresh(invoice)
+    invalidate_dashboard_slice(invoice.client_id)
+    invalidate_dashboard_slice(None)
+    if invoice.vendor_id:
+        invalidate_dashboard_slice(invoice.client_id, invoice.vendor_id)
+        invalidate_dashboard_slice(None, invoice.vendor_id)
+    invalidate_report_windows(client_id=invoice.client_id, vendor_id=invoice.vendor_id)
     return invoice
 
 
@@ -170,4 +223,35 @@ def delete_invoice(
 
     db.delete(invoice)
     db.commit()
+    invalidate_dashboard_slice(invoice.client_id)
+    invalidate_dashboard_slice(None)
+    if invoice.vendor_id:
+        invalidate_dashboard_slice(invoice.client_id, invoice.vendor_id)
+        invalidate_dashboard_slice(None, invoice.vendor_id)
+    invalidate_report_windows(client_id=invoice.client_id, vendor_id=invoice.vendor_id)
     return None
+
+
+@router.get("/{invoice_id}/pdf")
+def download_invoice_pdf(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_tenant_context)
+):
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if not tenant.is_admin and tenant.client_id != invoice.client_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
+    if tenant.vendor_id and tenant.vendor_id != invoice.vendor_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Vendor mismatch")
+
+    client = db.query(Client).filter(Client.id == invoice.client_id).first()
+    vendor = db.query(Vendor).filter(Vendor.id == invoice.vendor_id).first() if invoice.vendor_id else None
+
+    pdf_stream = build_invoice_pdf(invoice, client, vendor)
+    return StreamingResponse(
+        pdf_stream,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={invoice.invoice_number}.pdf"},
+    )

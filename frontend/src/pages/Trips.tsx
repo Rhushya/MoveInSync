@@ -4,8 +4,10 @@ import { tripsAPI, billingModelsAPI } from '../services/api'
 import { BillingModel, Trip } from '../types'
 import { useAuth } from '../hooks/useAuth'
 import InlineAlert from '../components/InlineAlert'
+import SystemStatusBar from '../components/SystemStatusBar'
 import { BillingEstimator } from '../lib/billingEngine'
 import { Plus, Trash2 } from 'lucide-react'
+import { subDays } from 'date-fns'
 
 type EnrichedTrip = Trip & {
   computed_total?: number
@@ -16,6 +18,7 @@ type EnrichedTrip = Trip & {
 export default function Trips() {
   const { selectedTenantId } = useAuth()
   const [statusFilter, setStatusFilter] = useState<'all' | Trip['status']>('all')
+  const [rangeFilter, setRangeFilter] = useState<'7d' | '30d' | '90d'>('7d')
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
     vendor_id: '',
@@ -31,9 +34,27 @@ export default function Trips() {
   const [deleteError, setDeleteError] = useState<string | undefined>(undefined)
   const queryClient = useQueryClient()
 
+  const dateWindow = useMemo(() => {
+    const now = new Date()
+    const lookup = {
+      '7d': subDays(now, 7),
+      '30d': subDays(now, 30),
+      '90d': subDays(now, 90),
+    } as const
+    return {
+      start: lookup[rangeFilter].toISOString(),
+      end: now.toISOString(),
+    }
+  }, [rangeFilter])
+
   const { data, isLoading } = useQuery({
-    queryKey: [`trips-${selectedTenantId || 'all'}-${statusFilter}`],
-    queryFn: () => tripsAPI.getAll({ client_id: selectedTenantId, status: statusFilter === 'all' ? undefined : statusFilter }).then(res => res.data),
+    queryKey: [`trips-${selectedTenantId || 'all'}-${statusFilter}-${rangeFilter}`],
+    queryFn: () => tripsAPI.getAll({
+      client_id: selectedTenantId,
+      status: statusFilter === 'all' ? undefined : statusFilter,
+      start_date: dateWindow.start,
+      end_date: dateWindow.end,
+    }).then(res => res.data),
   })
 
   const { data: modelsData } = useQuery({
@@ -60,6 +81,20 @@ export default function Trips() {
       vendor_margin: computation.vendorMargin,
     }
   })
+
+  const tripStats = useMemo(() => {
+    const totalDistance = trips.reduce((acc, trip) => acc + (trip.distance_km || 0), 0)
+    const totalDuration = trips.reduce((acc, trip) => acc + (trip.duration_hours || 0), 0)
+    const completionRate = trips.length
+      ? Math.round((trips.filter((t) => t.status === 'completed').length / trips.length) * 100)
+      : 0
+    return {
+      totalTrips: trips.length,
+      totalDistance,
+      totalDuration,
+      completionRate,
+    }
+  }, [trips])
 
   const createMutation = useMutation({
     mutationFn: tripsAPI.create,
@@ -92,7 +127,28 @@ export default function Trips() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Trips</h1>
-        <p className="text-gray-600 mt-2">View and manage all trips</p>
+        <p className="text-gray-600 mt-2">Tenant-scoped trip timelines with live telemetry</p>
+      </div>
+
+      <SystemStatusBar watchKeys={[`trips-${selectedTenantId || 'all'}-${statusFilter}-${rangeFilter}`]} />
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <p className="text-sm text-gray-500">Trips ({rangeFilter})</p>
+          <p className="text-2xl font-semibold text-gray-900">{tripStats.totalTrips}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <p className="text-sm text-gray-500">Distance</p>
+          <p className="text-2xl font-semibold text-gray-900">{tripStats.totalDistance.toFixed(1)} km</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <p className="text-sm text-gray-500">Duration</p>
+          <p className="text-2xl font-semibold text-gray-900">{tripStats.totalDuration.toFixed(1)} hrs</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <p className="text-sm text-gray-500">Completion</p>
+          <p className="text-2xl font-semibold text-gray-900">{tripStats.completionRate}%</p>
+        </div>
       </div>
 
       <div className="flex items-center gap-4">
@@ -107,6 +163,24 @@ export default function Trips() {
           <option value="in_progress">In Progress</option>
           <option value="completed">Completed</option>
         </select>
+        <div className="flex gap-2 items-center">
+          {[
+            { label: '7 days', value: '7d' },
+            { label: '30 days', value: '30d' },
+            { label: 'Quarter', value: '90d' },
+          ].map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setRangeFilter(option.value as typeof rangeFilter)}
+              className={`px-3 py-2 text-sm rounded-lg border ${
+                rangeFilter === option.value ? 'bg-primary-600 text-white border-primary-600' : 'border-gray-200 text-gray-600'
+              }`}
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         <button
           onClick={() => setShowForm((prev) => !prev)}
           className="ml-auto bg-primary-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-primary-700"
@@ -273,14 +347,17 @@ export default function Trips() {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <button
-                      onClick={() => deleteMutation.mutate(trip.id)}
-                      disabled={deleteMutation.isPending}
-                      className="inline-flex items-center text-sm text-red-600 hover:text-red-800 disabled:text-gray-400"
-                    >
-                      <Trash2 className="w-4 h-4 mr-1" />
-                      {deleteMutation.isPending ? 'Removing...' : 'Remove'}
-                    </button>
+                    <div className="flex items-center justify-end gap-3">
+                      <span className="text-xs text-gray-500">Vendor margin {trip.vendor_margin ? `${trip.vendor_margin.toFixed(2)}%` : 'n/a'}</span>
+                      <button
+                        onClick={() => deleteMutation.mutate(trip.id)}
+                        disabled={deleteMutation.isPending}
+                        className="inline-flex items-center text-sm text-red-600 hover:text-red-800 disabled:text-gray-400"
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        {deleteMutation.isPending ? 'Removing...' : 'Remove'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

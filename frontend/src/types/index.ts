@@ -65,8 +65,18 @@ export interface Invoice {
   billing_period_start: string
   billing_period_end: string
   total_trips: number
+  total_distance?: number
+  total_duration?: number
+  base_amount: number
+  extra_charges: number
+  incentives: number
+  tax_amount: number
   total_amount: number
   status: 'draft' | 'generated' | 'sent' | 'paid' | 'cancelled'
+  generated_at?: string
+  due_date?: string
+  paid_at?: string
+  notes?: string
 }
 
 export interface BillingModel {

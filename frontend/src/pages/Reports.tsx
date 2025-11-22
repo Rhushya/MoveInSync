@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Download, Loader2 } from 'lucide-react'
 import { useMutation } from '@tanstack/react-query'
 import { reportsAPI } from '../services/api'
@@ -7,6 +7,7 @@ import { useAuth } from '../hooks/useAuth'
 import { ReportSummary } from '../types'
 import InlineAlert from '../components/InlineAlert'
 import { useSystemHealth } from '../hooks/useSystemHealth'
+import SystemStatusBar from '../components/SystemStatusBar'
 
 export default function Reports() {
   const { user, selectedTenantId } = useAuth()
@@ -16,6 +17,11 @@ export default function Reports() {
   const [entityId, setEntityId] = useState('')
   const [recentReports, setRecentReports] = useState<ReportSummary[]>([])
   const { failureRate } = useSystemHealth()
+  const exportWindow = useMemo(() => {
+    const start = new Date(year, month - 1, 1)
+    const end = new Date(year, month, 0, 23, 59, 59)
+    return { startISO: start.toISOString(), endISO: end.toISOString() }
+  }, [month, year])
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -27,12 +33,12 @@ export default function Reports() {
         case 'employee':
           return reportsAPI.getEmployeeIncentives(Number(entityId), month, year)
         case 'trips':
-          const response = await reportsAPI.exportTrips(`${year}-${month}-01`, `${year}-${month}-28`, selectedTenantId)
-          const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' })
+          const response = await reportsAPI.exportTrips(exportWindow.startISO, exportWindow.endISO, selectedTenantId)
+          const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
           const url = window.URL.createObjectURL(blob)
           const a = document.createElement('a')
           a.href = url
-          a.download = `trips-${year}-${month}.csv`
+          a.download = `trips-${year}-${month}.xlsx`
           a.click()
           return response
         default:
@@ -65,6 +71,8 @@ export default function Reports() {
         <p className="text-gray-600 mt-2">Generate and export billing reports</p>
       </div>
 
+      <SystemStatusBar watchKeys={[]} />
+
       <div className="bg-white rounded-lg shadow p-6">
         <div className="space-y-4">
           <div>
@@ -79,6 +87,27 @@ export default function Reports() {
               <option value="employee">Employee Incentives</option>
               <option value="trips">Trip Export</option>
             </select>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Report Type</label>
+              <select
+                value={reportType}
+                onChange={(e) => setReportType(e.target.value as any)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="client">Client Monthly Report</option>
+                <option value="vendor">Vendor Payable Report</option>
+                <option value="employee">Employee Incentives</option>
+                <option value="trips">Trip Export</option>
+              </select>
+            </div>
+            <InlineAlert
+              variant="info"
+              title="Cache window"
+              description="Monthly client/vendor/employee reports are cached for 5 minutes server-side."
+            />
           </div>
 
           <div>

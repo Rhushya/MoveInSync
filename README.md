@@ -15,6 +15,7 @@ This system handles complex billing scenarios across multiple clients, vendors, 
 - ✅ **Automated Billing Engine** - Calculates trip fares with overage charges
 - ✅ **Incentive Management** - Automatic calculation of employee incentives
 - ✅ **Invoice Generation** - Separate invoices for clients and vendors
+- ✅ **Invoice PDFs** - Server-rendered PDF exports with line-item breakdowns
 - ✅ **Comprehensive Reporting** - Monthly summaries, trip exports, analytics
 
 ### Security & Authentication
@@ -25,14 +26,14 @@ This system handles complex billing scenarios across multiple clients, vendors, 
 
 ### Performance & Scalability
 - ✅ **Optimized Queries** - Indexed database fields
-- ✅ **Caching Ready** - Redis integration for session/data caching
+- ✅ **Redis Analytics Cache** - Dashboard stats & reports cached with TTL-based invalidation
 - ✅ **Async Processing** - Background task support via Celery
 - ✅ **Pagination** - Efficient data loading
 
 ### Monitoring & Error Handling
 - ✅ **Global Exception Handling** - Graceful error responses
 - ✅ **Logging** - Structured logging for debugging
-- ✅ **Health Checks** - Service health monitoring endpoint
+- ✅ **Health Checks & Metrics** - `/health` plus `/metrics` Prometheus endpoint with latency histograms
 - ✅ **Data Validation** - Pydantic schemas for request/response validation
 
 ## 🏗️ Architecture
@@ -195,6 +196,7 @@ npm run dev
 ### Invoices
 - `GET /api/v1/invoices` - List invoices
 - `POST /api/v1/invoices` - Generate invoice
+- `GET /api/v1/invoices/{id}/pdf` - Download signed PDF for an invoice
 
 ### Reports
 - `GET /api/v1/reports/client/{id}/monthly` - Client monthly report
@@ -293,10 +295,11 @@ curl http://localhost:8000/health
 - Error tracking
 
 ### Metrics
-- API response times
+- API response times (via `X-Response-Time` header + Prometheus histograms)
 - Database query performance
-- Cache hit rates
+- Cache hit/miss counters
 - User activity
+- Report generation latency buckets
 
 ## 🧪 Testing
 

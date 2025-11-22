@@ -194,8 +194,12 @@
    - `SystemStatusBar` surfaces realtime health + cache hit ratios per tenant selection.
    - Reports page reuses telemetry data to warn about degraded export pipelines.
 
+6. **Prometheus & Response-Time Instrumentation**
+- `prometheus_fastapi_instrumentator` exposes `/metrics` with grouped status codes, histograms, and cache counters.
+- Custom middleware adds `X-Response-Time` on every HTTP response so the UI can annotate report exports with precise latency.
+- `backend/app/services/monitoring.py` tracks cache hits/misses plus report generation latency buckets.
+
 **Future Enhancements:**
-- Prometheus metrics export
 - Grafana dashboards
 - APM (Application Performance Monitoring)
 - Log aggregation (ELK stack)
@@ -212,18 +216,13 @@
 
 **Caching Strategy:**
 
-1. **Redis Integration**
-   - Redis configured in docker-compose
-   - Ready for session caching
-   - Can cache frequently accessed data
+1. **Redis-backed Analytics Cache**
+   - Dashboard KPIs (`/dashboard/stats`) and monthly report endpoints write through Redis with 60s/300s TTLs respectively.
+   - `backend/app/services/cache.py` centralizes JSON serialization with Decimal/datetime support and Prometheus hit/miss counters.
 
-2. **Query Result Caching**
-   ```python
-   # Example: Cache billing models
-   @cache.memoize(timeout=300)
-   def get_active_billing_model(vendor_id):
-       return db.query(BillingModel).filter(...).first()
-   ```
+2. **Automatic Invalidation Hooks**
+   - Trip & invoice mutations call `invalidate_dashboard_slice` and `invalidate_report_windows` to drop tenant/vendor specific keys immediately.
+   - Patterns such as `reports:client:{clientId}:{period}` are purged right after billing events so cached exports never drift.
 
 3. **Client-side Caching**
    - React Query for API response caching
@@ -236,9 +235,9 @@
    - Indexed lookups
 
 **Cache Eviction Policies:**
-- TTL-based expiration (300 seconds default)
-- Invalidate on data updates
-- LRU eviction when memory full
+- TTL-based expiration (300 seconds for reports, 60 seconds for dashboard stats)
+- Explicit invalidation on trip/invoice mutations
+- Redis LRU eviction when memory is exhausted
 
 **Code Reference:**
 - `docker-compose.yml` - Redis service
@@ -313,6 +312,18 @@
 - `frontend/src/pages/Login.tsx` - UI error handling
 - `frontend/src/components/InlineAlert.tsx` - Consistent UX for validation or API failures across pages
 - `frontend/src/components/ErrorBoundary.tsx`
+
+### 9. Invoice PDFs & Experience Upgrades ✅
+
+**Highlights:**
+- FastAPI now exposes `GET /api/v1/invoices/{invoice_id}/pdf`, which renders a branded PDF with totals, tax breakdown, and client/vendor meta using ReportLab.
+- Frontend `Invoices.tsx` surfaces quick status edits, PDF download buttons, and a detail drawer that mirrors the PDF math so finance teams can inspect before exporting.
+- Trips, Billing Models, and Reports pages gained telemetry-aware status bars, range presets, and contextual helpers to keep multi-tenant operators oriented.
+
+**Code Reference:**
+- `backend/app/services/pdf_renderer.py` – ReportLab template used by the new endpoint.
+- `backend/app/api/v1/endpoints/invoices.py` – Endpoint + cache invalidation logic.
+- `frontend/src/pages/Invoices.tsx` – Status controls, PDF actions, and breakdown panel.
 
 ## Project Structure
 

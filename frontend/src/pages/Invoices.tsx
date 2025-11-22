@@ -1,10 +1,11 @@
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
 import { invoicesAPI } from '../services/api'
 import { Invoice } from '../types'
 import { useAuth } from '../hooks/useAuth'
 import InlineAlert from '../components/InlineAlert'
-import { Plus, Trash2 } from 'lucide-react'
+import SystemStatusBar from '../components/SystemStatusBar'
+import { Download, Eye, Plus, Trash2 } from 'lucide-react'
 
 export default function Invoices() {
   const { selectedTenantId } = useAuth()
@@ -12,6 +13,9 @@ export default function Invoices() {
   const [typeFilter, setTypeFilter] = useState<'all' | Invoice['invoice_type']>('all')
   const [showForm, setShowForm] = useState(false)
   const [deleteError, setDeleteError] = useState<string | undefined>(undefined)
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
+  const [statusUpdatingId, setStatusUpdatingId] = useState<number | null>(null)
+  const [pdfInvoiceId, setPdfInvoiceId] = useState<number | null>(null)
   const queryClient = useQueryClient()
   const [form, setForm] = useState({
     invoice_type: 'client',
@@ -35,6 +39,15 @@ export default function Invoices() {
   })
 
   const invoices: Invoice[] = data || []
+
+  const invoiceSummary = useMemo(() => {
+    const totalAmount = invoices.reduce((acc, inv) => acc + inv.total_amount, 0)
+    const pendingCount = invoices.filter((inv) => ['draft', 'generated', 'sent'].includes(inv.status)).length
+    const paidAmount = invoices
+      .filter((inv) => inv.status === 'paid')
+      .reduce((acc, inv) => acc + inv.total_amount, 0)
+    return { totalAmount, pendingCount, paidAmount }
+  }, [invoices])
 
   const createMutation = useMutation({
     mutationFn: invoicesAPI.create,
@@ -61,11 +74,52 @@ export default function Invoices() {
     },
   })
 
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: Invoice['status'] }) => invoicesAPI.update(id, { status }),
+    onMutate: ({ id }) => setStatusUpdatingId(id),
+    onSettled: () => setStatusUpdatingId(null),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`invoices-${selectedTenantId || 'all'}-${statusFilter}-${typeFilter}`] })
+    },
+  })
+
+  const pdfMutation = useMutation({
+    mutationFn: (invoice: Invoice) => invoicesAPI.downloadPdf(invoice.id),
+    onMutate: (invoice) => setPdfInvoiceId(invoice.id),
+    onSettled: () => setPdfInvoiceId(null),
+    onSuccess: (response, invoice) => {
+      const blob = new Blob([response.data], { type: 'application/pdf' })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${invoice.invoice_number}.pdf`
+      link.click()
+      window.URL.revokeObjectURL(url)
+    },
+  })
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
         <p className="text-gray-600 mt-2">Manage billing invoices</p>
+      </div>
+
+      <SystemStatusBar watchKeys={[`invoices-${selectedTenantId || 'all'}-${statusFilter}-${typeFilter}`]} />
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white border border-gray-100 rounded-xl p-4">
+          <p className="text-sm text-gray-500">Total Billed</p>
+          <p className="text-2xl font-semibold">₹{invoiceSummary.totalAmount.toLocaleString()}</p>
+        </div>
+        <div className="bg-white border border-gray-100 rounded-xl p-4">
+          <p className="text-sm text-gray-500">Pending Docs</p>
+          <p className="text-2xl font-semibold">{invoiceSummary.pendingCount}</p>
+        </div>
+        <div className="bg-white border border-gray-100 rounded-xl p-4">
+          <p className="text-sm text-gray-500">Paid</p>
+          <p className="text-2xl font-semibold">₹{invoiceSummary.paidAmount.toLocaleString()}</p>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-4 items-end">
@@ -209,8 +263,8 @@ export default function Invoices() {
 
       <InlineAlert
         variant="success"
-        title="Fault tolerant billing"
-        description="Invoices can be filtered without reloading the page thanks to cached datasets and optimistic UI updates."
+        title="Instrumented workflows"
+        description="All invoice API calls are cached per tenant and tracked via Prometheus latency histograms."
       />
 
       {isLoading ? (
@@ -237,29 +291,82 @@ export default function Invoices() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
                     {new Date(invoice.billing_period_start).toLocaleDateString()} - {new Date(invoice.billing_period_end).toLocaleDateString()}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">{invoice.total_trips}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">₹{invoice.total_amount.toLocaleString()}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      invoice.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {invoice.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <button
-                      onClick={() => deleteMutation.mutate(invoice.id)}
-                      disabled={deleteMutation.isPending}
-                      className="inline-flex items-center text-sm text-red-600 hover:text-red-800 disabled:text-gray-400"
-                    >
-                      <Trash2 className="w-4 h-4 mr-1" />
-                      {deleteMutation.isPending ? 'Removing...' : 'Remove'}
-                    </button>
-                  </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">{invoice.total_trips}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">₹{invoice.total_amount.toLocaleString()}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <select
+                        value={invoice.status}
+                        onChange={(e) => statusMutation.mutate({ id: invoice.id, status: e.target.value as Invoice['status'] })}
+                        disabled={statusMutation.isPending && statusUpdatingId === invoice.id}
+                        className="text-xs border border-gray-200 rounded-full px-2 py-1 bg-white"
+                      >
+                        <option value="draft">Draft</option>
+                        <option value="generated">Generated</option>
+                        <option value="sent">Sent</option>
+                        <option value="paid">Paid</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <div className="flex items-center justify-end gap-3">
+                        <button
+                          onClick={() => setSelectedInvoice(invoice)}
+                          className="inline-flex items-center text-sm text-gray-700 hover:text-gray-900"
+                        >
+                          <Eye className="w-4 h-4 mr-1" />
+                          View
+                        </button>
+                        <button
+                          onClick={() => pdfMutation.mutate(invoice)}
+                          className="inline-flex items-center text-sm text-primary-600 hover:text-primary-800 disabled:text-gray-400"
+                          disabled={pdfMutation.isPending && pdfInvoiceId === invoice.id}
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          PDF
+                        </button>
+                        <button
+                          onClick={() => deleteMutation.mutate(invoice.id)}
+                          disabled={deleteMutation.isPending}
+                          className="inline-flex items-center text-sm text-red-600 hover:text-red-800 disabled:text-gray-400"
+                        >
+                          <Trash2 className="w-4 h-4 mr-1" />
+                          {deleteMutation.isPending ? 'Removing...' : 'Remove'}
+                        </button>
+                      </div>
+                    </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {selectedInvoice && (
+        <div className="bg-white rounded-lg shadow p-6 space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-xl font-semibold">{selectedInvoice.invoice_number}</h3>
+              <p className="text-sm text-gray-500">Billing period {new Date(selectedInvoice.billing_period_start).toLocaleDateString()} - {new Date(selectedInvoice.billing_period_end).toLocaleDateString()}</p>
+            </div>
+            <button className="text-sm text-primary-600" onClick={() => setSelectedInvoice(null)}>Close</button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs uppercase text-gray-500">Base</p>
+              <p className="text-lg font-semibold">₹{selectedInvoice.base_amount.toLocaleString()}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs uppercase text-gray-500">Extras</p>
+              <p className="text-lg font-semibold">₹{selectedInvoice.extra_charges.toLocaleString()}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs uppercase text-gray-500">Total</p>
+              <p className="text-lg font-semibold">₹{selectedInvoice.total_amount.toLocaleString()}</p>
+            </div>
+          </div>
+          <p className="text-sm text-gray-600">
+            Distance billed {selectedInvoice.total_distance ?? 0} km · Duration {selectedInvoice.total_duration ?? 0} hrs · Incentives ₹{selectedInvoice.incentives.toLocaleString()}
+          </p>
         </div>
       )}
 

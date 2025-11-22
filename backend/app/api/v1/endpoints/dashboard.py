@@ -7,9 +7,12 @@ from app.db.session import get_db
 from app.models.trip import Trip
 from app.models.invoice import Invoice
 from app.api.deps import TenantContext, get_tenant_context
+from app.services.cache import build_cache_key, cache_get_json, cache_set_json
 from pydantic import BaseModel
 
 router = APIRouter()
+DASHBOARD_CACHE_SCOPE = "dashboard"
+DASHBOARD_CACHE_TTL = 60
 
 
 class DashboardStats(BaseModel):
@@ -32,6 +35,11 @@ def get_dashboard_stats(
     db: Session = Depends(get_db),
     tenant: TenantContext = Depends(get_tenant_context)
 ):
+    cache_key = build_cache_key("dashboard:stats", tenant.client_id, tenant.vendor_id)
+    cached = cache_get_json(cache_key, scope=DASHBOARD_CACHE_SCOPE)
+    if cached:
+        return DashboardStats(**cached)
+
     from app.models.client import Client
     from app.models.vendor import Vendor
     from app.models.employee import Employee
@@ -75,7 +83,7 @@ def get_dashboard_stats(
     total_revenue = revenue_query.scalar() or Decimal(0)
     pending_invoices = pending_query.scalar()
     
-    return DashboardStats(
+    stats = DashboardStats(
         total_clients=total_clients or 0,
         total_vendors=total_vendors or 0,
         total_employees=total_employees or 0,
@@ -84,6 +92,9 @@ def get_dashboard_stats(
         total_revenue_month=total_revenue,
         pending_invoices=pending_invoices or 0
     )
+
+    cache_set_json(cache_key, stats.model_dump(), ttl_seconds=DASHBOARD_CACHE_TTL)
+    return stats
 
 
 @router.get("/trip-trends")

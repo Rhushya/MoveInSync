@@ -6,6 +6,10 @@ from decimal import Decimal
 from app.db.session import get_db
 from app.models.trip import Trip, TripStatus
 from app.api.deps import TenantContext, get_tenant_context
+from app.services.cache import (
+    invalidate_dashboard_slice,
+    invalidate_report_windows,
+)
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -76,6 +80,15 @@ def create_trip(
     db.add(new_trip)
     db.commit()
     db.refresh(new_trip)
+    invalidate_dashboard_slice(new_trip.client_id)
+    invalidate_dashboard_slice(None)
+    invalidate_dashboard_slice(new_trip.client_id, new_trip.vendor_id)
+    invalidate_dashboard_slice(None, new_trip.vendor_id)
+    invalidate_report_windows(
+        client_id=new_trip.client_id,
+        vendor_id=new_trip.vendor_id,
+        employee_id=new_trip.employee_id,
+    )
     return new_trip
 
 
@@ -158,6 +171,15 @@ def update_trip(
 
     db.commit()
     db.refresh(trip)
+    invalidate_dashboard_slice(trip.client_id)
+    invalidate_dashboard_slice(None)
+    invalidate_dashboard_slice(trip.client_id, trip.vendor_id)
+    invalidate_dashboard_slice(None, trip.vendor_id)
+    invalidate_report_windows(
+        client_id=trip.client_id,
+        vendor_id=trip.vendor_id,
+        employee_id=trip.employee_id,
+    )
     return trip
 
 
@@ -186,6 +208,15 @@ def complete_trip(
     
     db.commit()
     db.refresh(trip)
+    invalidate_dashboard_slice(trip.client_id)
+    invalidate_dashboard_slice(None)
+    invalidate_dashboard_slice(trip.client_id, trip.vendor_id)
+    invalidate_dashboard_slice(None, trip.vendor_id)
+    invalidate_report_windows(
+        client_id=trip.client_id,
+        vendor_id=trip.vendor_id,
+        employee_id=trip.employee_id,
+    )
     
     return trip
 
@@ -209,4 +240,13 @@ def delete_trip(
 
     db.delete(trip)
     db.commit()
+    invalidate_dashboard_slice(trip.client_id)
+    invalidate_dashboard_slice(None)
+    invalidate_dashboard_slice(trip.client_id, trip.vendor_id)
+    invalidate_dashboard_slice(None, trip.vendor_id)
+    invalidate_report_windows(
+        client_id=trip.client_id,
+        vendor_id=trip.vendor_id,
+        employee_id=trip.employee_id,
+    )
     return None
