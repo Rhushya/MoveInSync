@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from datetime import datetime
 from decimal import Decimal
@@ -6,8 +6,9 @@ from app.db.session import get_db
 from app.models.trip import Trip
 from app.models.invoice import Invoice
 from app.models.incentive import Incentive
-from app.api.v1.endpoints.auth import get_current_user
-from app.models.user import User
+from app.api.deps import TenantContext, get_tenant_context
+from app.models.vendor import Vendor
+from app.models.employee import Employee
 import pandas as pd
 from io import BytesIO
 
@@ -20,8 +21,12 @@ def generate_client_report(
     month: int = Query(..., ge=1, le=12),
     year: int = Query(..., ge=2020),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    tenant: TenantContext = Depends(get_tenant_context)
 ):
+    scoped_client_id = tenant.assert_client_access(client_id)
+    if not scoped_client_id:
+        raise HTTPException(status_code=400, detail="client_id is required")
+    client_id = scoped_client_id
     start_date = datetime(year, month, 1)
     if month == 12:
         end_date = datetime(year + 1, 1, 1)
@@ -56,8 +61,15 @@ def generate_vendor_report(
     month: int = Query(..., ge=1, le=12),
     year: int = Query(..., ge=2020),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    tenant: TenantContext = Depends(get_tenant_context)
 ):
+    vendor = db.query(Vendor).filter(Vendor.id == vendor_id).first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    if tenant.client_id and vendor.client_id != tenant.client_id and not tenant.is_admin:
+        raise HTTPException(status_code=403, detail="Tenant mismatch")
+    if tenant.vendor_id and tenant.vendor_id != vendor_id:
+        raise HTTPException(status_code=403, detail="Vendor mismatch")
     start_date = datetime(year, month, 1)
     if month == 12:
         end_date = datetime(year + 1, 1, 1)
@@ -91,8 +103,13 @@ def generate_employee_incentive_report(
     month: int = Query(..., ge=1, le=12),
     year: int = Query(..., ge=2020),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    tenant: TenantContext = Depends(get_tenant_context)
 ):
+    employee = db.query(Employee).filter(Employee.id == employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    if not tenant.is_admin and tenant.client_id != employee.client_id:
+        raise HTTPException(status_code=403, detail="Tenant mismatch")
     start_date = datetime(year, month, 1)
     if month == 12:
         end_date = datetime(year + 1, 1, 1)
@@ -128,15 +145,18 @@ def export_trips_excel(
     end_date: datetime,
     client_id: int | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    tenant: TenantContext = Depends(get_tenant_context)
 ):
+    scoped_client_id = tenant.assert_client_access(client_id)
     query = db.query(Trip).filter(
         Trip.trip_date >= start_date,
         Trip.trip_date <= end_date
     )
     
-    if client_id:
-        query = query.filter(Trip.client_id == client_id)
+    if scoped_client_id:
+        query = query.filter(Trip.client_id == scoped_client_id)
+    if tenant.vendor_id and not tenant.is_admin:
+        query = query.filter(Trip.vendor_id == tenant.vendor_id)
     
     trips = query.all()
     

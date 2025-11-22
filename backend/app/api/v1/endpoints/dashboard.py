@@ -6,8 +6,7 @@ from decimal import Decimal
 from app.db.session import get_db
 from app.models.trip import Trip
 from app.models.invoice import Invoice
-from app.api.v1.endpoints.auth import get_current_user
-from app.models.user import User
+from app.api.deps import TenantContext, get_tenant_context
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -31,7 +30,7 @@ class TripTrend(BaseModel):
 @router.get("/stats", response_model=DashboardStats)
 def get_dashboard_stats(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    tenant: TenantContext = Depends(get_tenant_context)
 ):
     from app.models.client import Client
     from app.models.vendor import Vendor
@@ -40,25 +39,41 @@ def get_dashboard_stats(
     today = datetime.utcnow().date()
     month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     
-    total_clients = db.query(func.count(Client.id)).scalar()
-    total_vendors = db.query(func.count(Vendor.id)).scalar()
-    total_employees = db.query(func.count(Employee.id)).scalar()
+    clients_query = db.query(func.count(Client.id))
+    vendors_query = db.query(func.count(Vendor.id))
+    employees_query = db.query(func.count(Employee.id))
+
+    if tenant.client_id:
+        clients_query = clients_query.filter(Client.id == tenant.client_id)
+        vendors_query = vendors_query.filter(Vendor.client_id == tenant.client_id)
+        employees_query = employees_query.filter(Employee.client_id == tenant.client_id)
+    if tenant.vendor_id and not tenant.is_admin:
+        vendors_query = vendors_query.filter(Vendor.id == tenant.vendor_id)
     
-    total_trips_today = db.query(func.count(Trip.id)).filter(
-        func.date(Trip.trip_date) == today
-    ).scalar()
+    total_clients = clients_query.scalar()
+    total_vendors = vendors_query.scalar()
+    total_employees = employees_query.scalar()
     
-    total_trips_month = db.query(func.count(Trip.id)).filter(
-        Trip.trip_date >= month_start
-    ).scalar()
+    trip_today_query = db.query(func.count(Trip.id)).filter(func.date(Trip.trip_date) == today)
+    trip_month_query = db.query(func.count(Trip.id)).filter(Trip.trip_date >= month_start)
+    revenue_query = db.query(func.sum(Invoice.total_amount)).filter(Invoice.billing_period_start >= month_start)
+    pending_query = db.query(func.count(Invoice.id)).filter(Invoice.status.in_( ["draft", "generated", "sent"]))
+
+    if tenant.client_id:
+        trip_today_query = trip_today_query.filter(Trip.client_id == tenant.client_id)
+        trip_month_query = trip_month_query.filter(Trip.client_id == tenant.client_id)
+        revenue_query = revenue_query.filter(Invoice.client_id == tenant.client_id)
+        pending_query = pending_query.filter(Invoice.client_id == tenant.client_id)
+    if tenant.vendor_id and not tenant.is_admin:
+        trip_today_query = trip_today_query.filter(Trip.vendor_id == tenant.vendor_id)
+        trip_month_query = trip_month_query.filter(Trip.vendor_id == tenant.vendor_id)
+        revenue_query = revenue_query.filter(Invoice.vendor_id == tenant.vendor_id)
+        pending_query = pending_query.filter(Invoice.vendor_id == tenant.vendor_id)
     
-    total_revenue = db.query(func.sum(Invoice.total_amount)).filter(
-        Invoice.billing_period_start >= month_start
-    ).scalar() or Decimal(0)
-    
-    pending_invoices = db.query(func.count(Invoice.id)).filter(
-        Invoice.status.in_(["draft", "generated", "sent"])
-    ).scalar()
+    total_trips_today = trip_today_query.scalar()
+    total_trips_month = trip_month_query.scalar()
+    total_revenue = revenue_query.scalar() or Decimal(0)
+    pending_invoices = pending_query.scalar()
     
     return DashboardStats(
         total_clients=total_clients or 0,
@@ -75,16 +90,23 @@ def get_dashboard_stats(
 def get_trip_trends(
     days: int = Query(7, ge=1, le=90),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    tenant: TenantContext = Depends(get_tenant_context)
 ):
     start_date = datetime.utcnow() - timedelta(days=days)
     
-    trips = db.query(
+    trips_query = db.query(
         func.date(Trip.trip_date).label('date'),
         func.count(Trip.id).label('count')
     ).filter(
         Trip.trip_date >= start_date
-    ).group_by(
+    )
+
+    if tenant.client_id:
+        trips_query = trips_query.filter(Trip.client_id == tenant.client_id)
+    if tenant.vendor_id and not tenant.is_admin:
+        trips_query = trips_query.filter(Trip.vendor_id == tenant.vendor_id)
+
+    trips = trips_query.group_by(
         func.date(Trip.trip_date)
     ).order_by('date').all()
     

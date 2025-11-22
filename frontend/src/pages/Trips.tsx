@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { tripsAPI, billingModelsAPI } from '../services/api'
 import { BillingModel, Trip } from '../types'
 import { useAuth } from '../hooks/useAuth'
 import InlineAlert from '../components/InlineAlert'
 import { BillingEstimator } from '../lib/billingEngine'
+import { Plus, Trash2 } from 'lucide-react'
 
 type EnrichedTrip = Trip & {
   computed_total?: number
@@ -15,6 +16,20 @@ type EnrichedTrip = Trip & {
 export default function Trips() {
   const { selectedTenantId } = useAuth()
   const [statusFilter, setStatusFilter] = useState<'all' | Trip['status']>('all')
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({
+    vendor_id: '',
+    employee_id: '',
+    trip_date: '',
+    pickup_location: '',
+    drop_location: '',
+    pickup_time: '',
+    drop_time: '',
+    distance_km: '',
+    duration_hours: '',
+  })
+  const [deleteError, setDeleteError] = useState<string | undefined>(undefined)
+  const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
     queryKey: [`trips-${selectedTenantId || 'all'}-${statusFilter}`],
@@ -46,6 +61,33 @@ export default function Trips() {
     }
   })
 
+  const createMutation = useMutation({
+    mutationFn: tripsAPI.create,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`trips-${selectedTenantId || 'all'}-${statusFilter}`] })
+      setShowForm(false)
+      setForm({ vendor_id: '', employee_id: '', trip_date: '', pickup_location: '', drop_location: '', pickup_time: '', drop_time: '', distance_km: '', duration_hours: '' })
+    },
+  })
+
+  const tripFormIsValid = Boolean(
+    selectedTenantId &&
+    form.vendor_id &&
+    form.employee_id &&
+    form.trip_date &&
+    form.pickup_location &&
+    form.drop_location
+  )
+
+  const deleteMutation = useMutation({
+    mutationFn: tripsAPI.delete,
+    onMutate: () => setDeleteError(undefined),
+    onError: (error: any) => setDeleteError(error?.response?.data?.detail || 'Unable to delete trip'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`trips-${selectedTenantId || 'all'}-${statusFilter}`] })
+    },
+  })
+
   return (
     <div className="space-y-6">
       <div>
@@ -65,8 +107,125 @@ export default function Trips() {
           <option value="in_progress">In Progress</option>
           <option value="completed">Completed</option>
         </select>
+        <button
+          onClick={() => setShowForm((prev) => !prev)}
+          className="ml-auto bg-primary-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-primary-700"
+        >
+          <Plus className="w-4 h-4" />
+          {showForm ? 'Close form' : 'Add Trip'}
+        </button>
       </div>
 
+
+      {showForm && (
+        <div className="bg-white rounded-lg shadow p-6 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Vendor ID</label>
+              <input
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={form.vendor_id}
+                onChange={(e) => setForm({ ...form, vendor_id: e.target.value })}
+                placeholder="e.g. 12"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Employee ID</label>
+              <input
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={form.employee_id}
+                onChange={(e) => setForm({ ...form, employee_id: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Trip Date</label>
+              <input
+                type="datetime-local"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={form.trip_date}
+                onChange={(e) => setForm({ ...form, trip_date: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Pickup Location</label>
+              <input
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={form.pickup_location}
+                onChange={(e) => setForm({ ...form, pickup_location: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Drop Location</label>
+              <input
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={form.drop_location}
+                onChange={(e) => setForm({ ...form, drop_location: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Pickup Time</label>
+              <input
+                type="datetime-local"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={form.pickup_time}
+                onChange={(e) => setForm({ ...form, pickup_time: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Drop Time</label>
+              <input
+                type="datetime-local"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={form.drop_time}
+                onChange={(e) => setForm({ ...form, drop_time: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Distance (km)</label>
+              <input
+                type="number"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={form.distance_km}
+                onChange={(e) => setForm({ ...form, distance_km: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Duration (hrs)</label>
+              <input
+                type="number"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={form.duration_hours}
+                onChange={(e) => setForm({ ...form, duration_hours: e.target.value })}
+              />
+            </div>
+          </div>
+          {!selectedTenantId && (
+            <InlineAlert variant="warning" title="Select a tenant" description="Choose a tenant in the status bar before creating trips." />
+          )}
+          <button
+            onClick={() => createMutation.mutate({
+              client_id: selectedTenantId,
+              vendor_id: Number(form.vendor_id),
+              employee_id: Number(form.employee_id),
+              trip_date: form.trip_date ? new Date(form.trip_date).toISOString() : new Date().toISOString(),
+              pickup_location: form.pickup_location,
+              drop_location: form.drop_location,
+              pickup_time: form.pickup_time ? new Date(form.pickup_time).toISOString() : undefined,
+              drop_time: form.drop_time ? new Date(form.drop_time).toISOString() : undefined,
+              distance_km: form.distance_km ? Number(form.distance_km) : undefined,
+              duration_hours: form.duration_hours ? Number(form.duration_hours) : undefined,
+            })}
+            disabled={createMutation.isPending || !tripFormIsValid}
+            className="bg-primary-600 text-white px-4 py-2 rounded-lg disabled:opacity-60"
+          >
+            {createMutation.isPending ? 'Creating...' : 'Create Trip'}
+          </button>
+        </div>
+      )}
       <InlineAlert
         variant="warning"
         title="Billing Engine"
@@ -87,6 +246,7 @@ export default function Trips() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fare</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Projected Total</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -112,11 +272,25 @@ export default function Trips() {
                       <p className="text-xs text-gray-500">{trip.computed_notes}</p>
                     )}
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                    <button
+                      onClick={() => deleteMutation.mutate(trip.id)}
+                      disabled={deleteMutation.isPending}
+                      className="inline-flex items-center text-sm text-red-600 hover:text-red-800 disabled:text-gray-400"
+                    >
+                      <Trash2 className="w-4 h-4 mr-1" />
+                      {deleteMutation.isPending ? 'Removing...' : 'Remove'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {deleteError && (
+        <InlineAlert variant="error" title="Unable to delete trip" description={deleteError} />
       )}
     </div>
   )

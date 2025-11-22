@@ -3,9 +3,12 @@ import { useState } from 'react'
 import { billingModelsAPI, vendorsAPI } from '../services/api'
 import { BillingModel, Vendor } from '../types'
 import InlineAlert from '../components/InlineAlert'
+import { Trash2 } from 'lucide-react'
+import { useAuth } from '../hooks/useAuth'
 
 export default function BillingModels() {
   const queryClient = useQueryClient()
+  const { selectedTenantId } = useAuth()
   const [form, setForm] = useState({
     vendor_id: '',
     name: '',
@@ -14,15 +17,16 @@ export default function BillingModels() {
     cost_per_trip: '',
   })
   const [showForm, setShowForm] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | undefined>(undefined)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['billingModels-all'],
+    queryKey: ['billingModels-all', selectedTenantId],
     queryFn: () => billingModelsAPI.getAll().then(res => res.data),
   })
 
   const { data: vendors } = useQuery({
-    queryKey: ['vendors-for-models'],
-    queryFn: () => vendorsAPI.getAll().then(res => res.data),
+    queryKey: ['vendors-for-models', selectedTenantId],
+    queryFn: () => vendorsAPI.getAll(selectedTenantId).then(res => res.data),
   })
 
   const mutation = useMutation({
@@ -31,6 +35,15 @@ export default function BillingModels() {
       queryClient.invalidateQueries({ queryKey: ['billingModels-all'] })
       setShowForm(false)
       setForm({ vendor_id: '', name: '', model_type: 'package', monthly_fixed_cost: '', cost_per_trip: '' })
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: billingModelsAPI.delete,
+    onMutate: () => setDeleteError(undefined),
+    onError: (error: any) => setDeleteError(error?.response?.data?.detail || 'Unable to delete billing model'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['billingModels-all'] })
     },
   })
 
@@ -141,6 +154,7 @@ export default function BillingModels() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fixed Cost</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Per Trip</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -155,11 +169,25 @@ export default function BillingModels() {
                       {model.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                    <button
+                      onClick={() => deleteMutation.mutate(model.id)}
+                      disabled={deleteMutation.isPending}
+                      className="inline-flex items-center text-sm text-red-600 hover:text-red-800 disabled:text-gray-400"
+                    >
+                      <Trash2 className="w-4 h-4 mr-1" />
+                      {deleteMutation.isPending ? 'Removing...' : 'Remove'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {deleteError && (
+        <InlineAlert variant="error" title="Delete failed" description={deleteError} />
       )}
     </div>
   )

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { clientsAPI } from '../services/api'
 import { Client } from '../types'
-import { Plus, RefreshCw } from 'lucide-react'
+import { Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import InlineAlert from '../components/InlineAlert'
 import { formatApiError } from '../lib/errorUtils'
@@ -28,6 +28,22 @@ export default function Clients() {
       setFormVisible(false)
     },
   })
+
+  const [deleteError, setDeleteError] = useState<string | undefined>(undefined)
+
+  const deleteMutation = useMutation({
+    mutationFn: clientsAPI.delete,
+    onMutate: () => {
+      setDeleteError(undefined)
+    },
+    onError: (error: any) => {
+      setDeleteError(formatApiError(error, 'Unable to delete client. Ensure no dependent data exists.'))
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`clients-${selectedTenantId || 'all'}`] })
+    },
+  })
+
 
   const clients: Client[] = (data || []).filter((client: Client) =>
     client.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -132,6 +148,9 @@ export default function Clients() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -157,11 +176,25 @@ export default function Clients() {
                       {client.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                    <button
+                      onClick={() => deleteMutation.mutate(client.id)}
+                      disabled={deleteMutation.isPending}
+                      className="inline-flex items-center text-sm text-red-600 hover:text-red-800 disabled:text-gray-400"
+                    >
+                      <Trash2 className="w-4 h-4 mr-1" />
+                      {deleteMutation.isPending ? 'Removing...' : 'Remove'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {deleteError && (
+        <InlineAlert variant="error" title="Delete failed" description={deleteError} />
       )}
     </div>
   )

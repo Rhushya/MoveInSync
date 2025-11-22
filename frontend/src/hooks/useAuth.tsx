@@ -23,13 +23,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isBootstrapping, setIsBootstrapping] = useState(true)
   const [tenants, setTenants] = useState<Client[]>([])
-  const [selectedTenantId, setSelectedTenantId] = useState<number | undefined>(undefined)
+  const [selectedTenantId, setSelectedTenantIdState] = useState<number | undefined>(undefined)
   const [bootstrapError, setBootstrapError] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     const storedTenantId = localStorage.getItem('selectedTenantId')
     if (storedTenantId) {
-      setSelectedTenantId(Number(storedTenantId))
+      setSelectedTenantIdState(Number(storedTenantId))
     }
     const token = localStorage.getItem('token')
     if (!token) {
@@ -63,10 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const fetchedTenants = response.data as Client[]
         setTenants(fetchedTenants)
         if (!selectedTenantId && fetchedTenants.length) {
-          setSelectedTenantId(fetchedTenants[0].id)
+          updateSelectedTenant(fetchedTenants[0].id)
         }
       } else if (currentUser.client_id) {
-        setSelectedTenantId(currentUser.client_id)
+        updateSelectedTenant(currentUser.client_id)
       }
     } catch (error) {
       console.error('Failed to hydrate tenants', error)
@@ -88,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const updateSelectedTenant = (id?: number) => {
-    setSelectedTenantId(id)
+    setSelectedTenantIdState(id)
     if (id) {
       localStorage.setItem('selectedTenantId', String(id))
     } else {
