@@ -1,0 +1,110 @@
+Folder PATH listing for volume New Volume
+Volume serial number is ACE1-CAC8
+E:.
+|   docker-compose.yml
+|   DOCUMENTATION.md
+|   project_structure.txt
+|   PROJECT_SUMMARY.md
+|   QUICKSTART.md
+|   README.md
+|   setup.bat
+|   setup.sh
+|   
++---backend
+|   |   .env.example
+|   |   .gitignore
+|   |   Dockerfile
+|   |   requirements.txt
+|   |   
+|   +---app
+|   |   |   main.py
+|   |   |   __init__.py
+|   |   |   
+|   |   +---api
+|   |   |   |   __init__.py
+|   |   |   |   
+|   |   |   \---v1
+|   |   |       |   api.py
+|   |   |       |   __init__.py
+|   |   |       |   
+|   |   |       \---endpoints
+|   |   |               auth.py
+|   |   |               billing_models.py
+|   |   |               clients.py
+|   |   |               dashboard.py
+|   |   |               employees.py
+|   |   |               invoices.py
+|   |   |               reports.py
+|   |   |               trips.py
+|   |   |               vendors.py
+|   |   |               __init__.py
+|   |   |               
+|   |   +---core
+|   |   |       config.py
+|   |   |       security.py
+|   |   |       __init__.py
+|   |   |       
+|   |   +---db
+|   |   |       session.py
+|   |   |       __init__.py
+|   |   |       
+|   |   +---middleware
+|   |   |       tenant.py
+|   |   |       __init__.py
+|   |   |       
+|   |   +---models
+|   |   |       billing_model.py
+|   |   |       client.py
+|   |   |       employee.py
+|   |   |       incentive.py
+|   |   |       invoice.py
+|   |   |       trip.py
+|   |   |       user.py
+|   |   |       vendor.py
+|   |   |       __init__.py
+|   |   |       
+|   |   +---schemas
+|   |   \---services
+|   |           billing_engine.py
+|   |           __init__.py
+|   |           
+|   \---tests
+\---frontend
+    |   .env
+    |   .gitignore
+    |   Dockerfile
+    |   index.html
+    |   package.json
+    |   postcss.config.js
+    |   tailwind.config.js
+    |   tsconfig.json
+    |   tsconfig.node.json
+    |   vite.config.ts
+    |   
+    \---src
+        |   App.tsx
+        |   index.css
+        |   main.tsx
+        |   
+        +---components
+        |       Card.tsx
+        |       Layout.tsx
+        |       
+        +---hooks
+        +---lib
+        +---pages
+        |       BillingModels.tsx
+        |       Clients.tsx
+        |       Dashboard.tsx
+        |       Invoices.tsx
+        |       Login.tsx
+        |       Reports.tsx
+        |       Trips.tsx
+        |       Vendors.tsx
+        |       
+        +---services
+        |       api.ts
+        |       
+        \---types
+                index.ts
+                

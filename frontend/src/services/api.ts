@@ -1,0 +1,89 @@
+import axios from 'axios'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
+const api = axios.create({
+  baseURL: `${API_URL}/api/v1`,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token')
+      window.location.href = '/login'
+    }
+    return Promise.reject(error)
+  }
+)
+
+export const authAPI = {
+  login: (username: string, password: string) =>
+    api.post('/auth/login', new URLSearchParams({ username, password }), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    }),
+  getMe: () => api.get('/auth/me'),
+}
+
+export const dashboardAPI = {
+  getStats: () => api.get('/dashboard/stats'),
+  getTripTrends: (days: number = 7) => api.get(`/dashboard/trip-trends?days=${days}`),
+}
+
+export const clientsAPI = {
+  getAll: (skip = 0, limit = 100) => api.get(`/clients?skip=${skip}&limit=${limit}`),
+  getOne: (id: number) => api.get(`/clients/${id}`),
+  create: (data: any) => api.post('/clients', data),
+}
+
+export const vendorsAPI = {
+  getAll: (clientId?: number) => api.get('/vendors', { params: { client_id: clientId } }),
+  getOne: (id: number) => api.get(`/vendors/${id}`),
+  create: (data: any) => api.post('/vendors', data),
+}
+
+export const tripsAPI = {
+  getAll: (params?: any) => api.get('/trips', { params }),
+  getOne: (id: number) => api.get(`/trips/${id}`),
+  create: (data: any) => api.post('/trips', data),
+  complete: (id: number, data: any) => api.patch(`/trips/${id}/complete`, null, { params: data }),
+}
+
+export const invoicesAPI = {
+  getAll: (params?: any) => api.get('/invoices', { params }),
+  getOne: (id: number) => api.get(`/invoices/${id}`),
+  create: (data: any) => api.post('/invoices', data),
+}
+
+export const billingModelsAPI = {
+  getAll: (vendorId?: number) => api.get('/billing-models', { params: { vendor_id: vendorId } }),
+  getOne: (id: number) => api.get(`/billing-models/${id}`),
+  create: (data: any) => api.post('/billing-models', data),
+}
+
+export const reportsAPI = {
+  getClientReport: (clientId: number, month: number, year: number) =>
+    api.get(`/reports/client/${clientId}/monthly`, { params: { month, year } }),
+  getVendorReport: (vendorId: number, month: number, year: number) =>
+    api.get(`/reports/vendor/${vendorId}/monthly`, { params: { month, year } }),
+  getEmployeeIncentives: (employeeId: number, month: number, year: number) =>
+    api.get(`/reports/employee/${employeeId}/incentives`, { params: { month, year } }),
+  exportTrips: (startDate: string, endDate: string, clientId?: number) =>
+    api.get('/reports/export/trips', {
+      params: { start_date: startDate, end_date: endDate, client_id: clientId },
+      responseType: 'blob',
+    }),
+}
+
+export default api
