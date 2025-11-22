@@ -1,15 +1,22 @@
-import { useState } from 'react'
-import { authAPI } from '../services/api'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useAuth } from '../hooks/useAuth'
 
-interface LoginProps {
-  onLogin: () => void
-}
-
-export default function Login({ onLogin }: LoginProps) {
+export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const { login, bootstrapError, isAuthenticated } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const redirectPath = (location.state as { from?: Location })?.from?.pathname || '/dashboard'
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate(redirectPath, { replace: true })
+    }
+  }, [isAuthenticated, navigate, redirectPath])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -17,9 +24,8 @@ export default function Login({ onLogin }: LoginProps) {
     setLoading(true)
 
     try {
-      const response = await authAPI.login(email, password)
-      localStorage.setItem('token', response.data.access_token)
-      onLogin()
+      await login(email, password)
+      navigate(redirectPath, { replace: true })
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Login failed')
     } finally {
@@ -34,9 +40,9 @@ export default function Login({ onLogin }: LoginProps) {
           MoveInSync Billing
         </h2>
         
-        {error && (
+        {(error || bootstrapError) && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
-            {error}
+            {error || bootstrapError}
           </div>
         )}
 
@@ -77,8 +83,13 @@ export default function Login({ onLogin }: LoginProps) {
         </form>
 
         <div className="mt-6 text-center text-sm text-gray-600">
-          <p>Demo credentials:</p>
-          <p className="font-mono">admin@moveinsync.com / admin123</p>
+          <p>
+            Need access? Contact the platform admin or review the{' '}
+            <a className="text-primary-600 underline" href="/DOCUMENTATION.md" target="_blank" rel="noreferrer">
+              resiliency playbook
+            </a>{' '}
+            to request a secure reset.
+          </p>
         </div>
       </div>
     </div>

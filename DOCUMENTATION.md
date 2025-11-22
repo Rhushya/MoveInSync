@@ -9,6 +9,9 @@
 - OAuth2 password flow for token generation
 - Secure token validation middleware
 - Protected endpoints requiring authentication
+- Frontend `AuthProvider` (`frontend/src/hooks/useAuth.tsx`) persists tokens, hydrates tenants, and exposes RBAC helpers consumed by `ProtectedRoute` and `Layout`.
+- Navigation auto-hides unauthorized routes, while `/reports`, `/clients`, `/vendors`, `/billing-models`, and `/invoices` routes enforce role gates in `App.tsx`.
+- `Login.tsx` now orchestrates redirect-on-success flows and surfaces bootstrap failures for quicker troubleshooting.
 
 **Code Reference:**
 - `backend/app/core/security.py` - Security utilities
@@ -44,6 +47,8 @@
 
 **Code Reference:**
 - `backend/app/services/billing_engine.py` - Billing algorithm implementation
+- `frontend/src/lib/billingEngine.ts` - TypeScript BillingEstimator powering inline insights
+- `frontend/src/components/ComplexityPanel.tsx` - Renders cost estimates per workflow
 
 ### 3. Handling System Failure Cases ✅
 
@@ -71,10 +76,17 @@
    - PostgreSQL ACID transactions
    - Foreign key constraints
    - Validation before database commits
+5. **Frontend Resiliency Layer**
+   - `SystemStatusBar` combines telemetry, connectivity, and cache diagnostics at runtime.
+   - `ResiliencyPlaybook` component explains detection/recovery steps for three critical scenarios.
+   - `ErrorBoundary` guards the entire React tree with reset + reload affordances.
 
 **Code Reference:**
 - `backend/app/main.py:global_exception_handler()` - Global error handler
 - `frontend/src/services/api.ts` - API error interceptors
+- `frontend/src/components/ErrorBoundary.tsx`
+- `frontend/src/components/SystemStatusBar.tsx`
+- `frontend/src/components/ResiliencyPlaybook.tsx`
 
 ### 4. Object-Oriented Programming (OOPS) ✅
 
@@ -104,6 +116,8 @@
 - `backend/app/models/` - ORM model classes
 - `backend/app/services/billing_engine.py:BillingEngine` - Service class
 - `frontend/src/components/` - React component classes
+- `frontend/src/lib/billingEngine.ts` - Encapsulated estimator reused by Trips + Reports pages
+- `frontend/src/pages/Trips.tsx` - Demonstrates OOP composition at the UI layer
 
 ### 5. Trade-offs in the System ✅
 
@@ -147,6 +161,7 @@
 
 **Code Reference:**
 - `README.md` - Documented trade-offs section
+- `frontend/src/components/TradeOffPanel.tsx` - Interactive trade-off catalogue surfaced on the dashboard
 
 ### 6. System Monitoring ✅
 
@@ -174,6 +189,10 @@
    - SQLAlchemy echo mode for development
    - Query performance can be tracked
    - Slow query identification
+5. **Client-Side Telemetry Overlay**
+   - `frontend/src/lib/telemetry.ts` captures latency, failure, and cache statistics from Axios interceptors.
+   - `SystemStatusBar` surfaces realtime health + cache hit ratios per tenant selection.
+   - Reports page reuses telemetry data to warn about degraded export pipelines.
 
 **Future Enhancements:**
 - Prometheus metrics export
@@ -185,6 +204,9 @@
 - `backend/app/main.py` - Logging configuration
 - `backend/app/api/v1/endpoints/dashboard.py` - Metrics endpoint
 - `frontend/src/pages/Dashboard.tsx` - Metrics visualization
+- `frontend/src/components/SystemStatusBar.tsx`
+- `frontend/src/hooks/useSystemHealth.ts`
+- `frontend/src/hooks/useCacheDiagnostics.ts`
 
 ### 7. Caching ✅
 
@@ -222,6 +244,8 @@
 - `docker-compose.yml` - Redis service
 - `frontend/src/main.tsx` - React Query configuration
 - `backend/app/core/config.py` - Redis URL config
+- `frontend/src/hooks/useCacheDiagnostics.ts` + `SystemStatusBar` quantify cache hits/misses.
+- Tenant-aware query keys (`clients-${tenantId}` etc.) keep cached datasets isolated per client.
 
 ### 8. Error and Exception Handling ✅
 
@@ -287,6 +311,8 @@
 - `backend/app/main.py` - Global error handlers
 - `frontend/src/services/api.ts` - Error interceptors
 - `frontend/src/pages/Login.tsx` - UI error handling
+- `frontend/src/components/InlineAlert.tsx` - Consistent UX for validation or API failures across pages
+- `frontend/src/components/ErrorBoundary.tsx`
 
 ## Project Structure
 
@@ -391,6 +417,34 @@ moveinsync/
 - [ ] Load test the application
 - [ ] Document operational procedures
 - [ ] Set up CI/CD pipeline
+
+## Demonstration & Evidence
+
+To satisfy the submission guidelines that call for textual explanations, screenshots, and a demo video, follow the workflow below:
+
+1. **Record a walkthrough video (3–5 minutes):**
+   - Start from the login screen and highlight RBAC by switching tenants via the selector.
+   - Showcase dashboard widgets (trade-offs, complexity, monitoring) and narrate key insights.
+   - Demonstrate configuring a billing model, recomputing trip costs, and exporting a report.
+   - Close with the Resiliency Playbook to emphasize failure-handling procedures.
+
+2. **Capture annotated screenshots:**
+   - Dashboard overview with telemetry banner.
+   - Trips page showing OOP-driven billing insights.
+   - Reports page after generating a sample export.
+   Embed these images into the README or an appendix so reviewers can quickly scan capabilities.
+
+3. **Curate code snippets in documentation:**
+   - Reference `frontend/src/lib/billingEngine.ts` for cost estimation logic.
+   - Highlight the Axios telemetry snippet from `frontend/src/services/api.ts`.
+   - Include the `ProtectedRoute` and `ErrorBoundary` snippets to prove security + resiliency work.
+
+4. **Submission bundle checklist:**
+   - Updated `DOCUMENTATION.md` (this file) with links to media assets.
+   - Video file or accessible link stored under `docs/media/` (placeholder folder can be created).
+   - Screenshots stored in `docs/screenshots/` and referenced from README/QUICKSTART.
+
+This ensures reviewers see textual explanations, screenshots, and demo evidence in a single, structured flow.
 
 ## Performance Benchmarks
 

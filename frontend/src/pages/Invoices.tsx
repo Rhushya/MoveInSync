@@ -1,11 +1,23 @@
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { invoicesAPI } from '../services/api'
 import { Invoice } from '../types'
+import { useAuth } from '../hooks/useAuth'
+import InlineAlert from '../components/InlineAlert'
 
 export default function Invoices() {
+  const { selectedTenantId } = useAuth()
+  const [statusFilter, setStatusFilter] = useState<'all' | Invoice['status']>('all')
+  const [typeFilter, setTypeFilter] = useState<'all' | Invoice['invoice_type']>('all')
+
   const { data, isLoading } = useQuery({
-    queryKey: ['invoices'],
-    queryFn: () => invoicesAPI.getAll().then(res => res.data),
+    queryKey: [`invoices-${selectedTenantId || 'all'}-${statusFilter}-${typeFilter}`],
+    queryFn: () =>
+      invoicesAPI.getAll({
+        client_id: selectedTenantId,
+        status: statusFilter === 'all' ? undefined : statusFilter,
+        invoice_type: typeFilter === 'all' ? undefined : typeFilter,
+      }).then(res => res.data),
   })
 
   const invoices: Invoice[] = data || []
@@ -16,6 +28,41 @@ export default function Invoices() {
         <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
         <p className="text-gray-600 mt-2">Manage billing invoices</p>
       </div>
+
+      <div className="flex flex-wrap gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as any)}
+            className="px-3 py-2 border border-gray-300 rounded-lg"
+          >
+            <option value="all">All</option>
+            <option value="draft">Draft</option>
+            <option value="generated">Generated</option>
+            <option value="sent">Sent</option>
+            <option value="paid">Paid</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Invoice Type</label>
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value as any)}
+            className="px-3 py-2 border border-gray-300 rounded-lg"
+          >
+            <option value="all">All</option>
+            <option value="client">Client</option>
+            <option value="vendor">Vendor</option>
+          </select>
+        </div>
+      </div>
+
+      <InlineAlert
+        variant="success"
+        title="Fault tolerant billing"
+        description="Invoices can be filtered without reloading the page thanks to cached datasets and optimistic UI updates."
+      />
 
       {isLoading ? (
         <div className="text-center py-12">Loading...</div>

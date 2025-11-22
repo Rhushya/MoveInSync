@@ -1,9 +1,14 @@
+export type UserRole = 'admin' | 'vendor' | 'employee' | 'finance' | 'operations'
+
 export interface User {
   id: number
   email: string
   full_name: string
-  role: 'admin' | 'vendor' | 'employee' | 'finance' | 'operations'
+  role: UserRole
   is_active: boolean
+  client_id?: number
+  vendor_id?: number
+  permissions?: string[]
 }
 
 export interface Client {
@@ -86,4 +91,21 @@ export interface DashboardStats {
   total_trips_month: number
   total_revenue_month: number
   pending_invoices: number
+}
+
+export interface ReportSummary {
+  id: string
+  type: 'client' | 'vendor' | 'employee' | 'trips'
+  generatedAt: string
+  generatedBy: string
+  tenantName: string
+  metadata: Record<string, string | number>
+}
+
+export interface MonitoringInsight {
+  latencyMs: number
+  failureRate: number
+  cacheHitRatio: number
+  lastIncidentAt?: string
+  notes?: string
 }

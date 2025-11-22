@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { telemetry } from '../lib/telemetry'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -14,12 +15,22 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  ;(config as any).metadata = { startTime }
   return config
 })
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const startTime = (response.config as any)?.metadata?.startTime || performance.now()
+    const latency = Math.max(0, (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime)
+    telemetry.recordSuccess(latency)
+    return response
+  },
   (error) => {
+    const startTime = (error.config as any)?.metadata?.startTime || performance.now()
+    const latency = Math.max(0, (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime)
+    telemetry.recordFailure(latency, error.response?.status)
     if (error.response?.status === 401) {
       localStorage.removeItem('token')
       window.location.href = '/login'

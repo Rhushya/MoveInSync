@@ -1,14 +1,27 @@
 import { useQuery } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
 import { vendorsAPI } from '../services/api'
 import { Vendor } from '../types'
+import { useAuth } from '../hooks/useAuth'
+import InlineAlert from '../components/InlineAlert'
 
 export default function Vendors() {
+  const { selectedTenantId } = useAuth()
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
+
   const { data, isLoading } = useQuery({
-    queryKey: ['vendors'],
-    queryFn: () => vendorsAPI.getAll().then(res => res.data),
+    queryKey: [`vendors-${selectedTenantId || 'all'}`],
+    queryFn: () => vendorsAPI.getAll(selectedTenantId).then(res => res.data),
+    meta: { ttl: 1000 * 60 * 10 },
   })
 
-  const vendors: Vendor[] = data || []
+  const vendors: Vendor[] = useMemo(() => {
+    const list = data || []
+    if (statusFilter === 'all') return list
+    return list.filter((vendor: Vendor) =>
+      statusFilter === 'active' ? vendor.is_active : !vendor.is_active
+    )
+  }, [data, statusFilter])
 
   return (
     <div className="space-y-6">
@@ -16,6 +29,25 @@ export default function Vendors() {
         <h1 className="text-3xl font-bold text-gray-900">Vendors</h1>
         <p className="text-gray-600 mt-2">Manage transportation vendors</p>
       </div>
+
+      <div className="flex items-center gap-4">
+        <label className="text-sm font-medium text-gray-700">Status</label>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as any)}
+          className="px-3 py-2 border border-gray-300 rounded-lg"
+        >
+          <option value="all">All</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
+
+      <InlineAlert
+        variant="success"
+        title="Caching"
+        description="Vendor lookup responses remain cached for 10 minutes and are tenant isolated to maintain billing SLAs."
+      />
 
       {isLoading ? (
         <div className="text-center py-12">Loading...</div>

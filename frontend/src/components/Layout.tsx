@@ -1,5 +1,4 @@
-import { ReactNode } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, Outlet, useLocation } from 'react-router-dom'
 import { 
   LayoutDashboard, 
   Users, 
@@ -10,28 +9,33 @@ import {
   BarChart3, 
   LogOut 
 } from 'lucide-react'
-
-interface LayoutProps {
-  children: ReactNode
-  onLogout: () => void
-}
+import { useAuth } from '../hooks/useAuth'
+import TenantSelector from './TenantSelector'
+import SystemStatusBar from './SystemStatusBar'
 
 const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Clients', href: '/clients', icon: Users },
-  { name: 'Vendors', href: '/vendors', icon: Truck },
-  { name: 'Trips', href: '/trips', icon: Route },
-  { name: 'Invoices', href: '/invoices', icon: FileText },
-  { name: 'Billing Models', href: '/billing-models', icon: CreditCard },
-  { name: 'Reports', href: '/reports', icon: BarChart3 },
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'vendor', 'employee', 'finance', 'operations'] },
+  { name: 'Clients', href: '/clients', icon: Users, roles: ['admin', 'finance', 'operations'] },
+  { name: 'Vendors', href: '/vendors', icon: Truck, roles: ['admin', 'finance', 'operations'] },
+  { name: 'Trips', href: '/trips', icon: Route, roles: ['admin', 'vendor', 'operations'] },
+  { name: 'Invoices', href: '/invoices', icon: FileText, roles: ['admin', 'finance'] },
+  { name: 'Billing Models', href: '/billing-models', icon: CreditCard, roles: ['admin', 'finance'] },
+  { name: 'Reports', href: '/reports', icon: BarChart3, roles: ['admin', 'finance', 'operations'] },
 ]
 
-export default function Layout({ children, onLogout }: LayoutProps) {
+export default function Layout() {
   const location = useLocation()
+  const { user, logout, selectedTenantId } = useAuth()
+  const watchKeys = [
+    ['dashboardStats'],
+    ['tripTrends'],
+    [`clients-${selectedTenantId || 'all'}`],
+    [`vendors-${selectedTenantId || 'all'}`],
+  ]
 
   const handleLogout = () => {
     localStorage.removeItem('token')
-    onLogout()
+    logout()
   }
 
   return (
@@ -46,7 +50,9 @@ export default function Layout({ children, onLogout }: LayoutProps) {
 
           {/* Navigation */}
           <nav className="flex-1 px-4 py-6 space-y-2">
-            {navigation.map((item) => {
+            {navigation
+              .filter((item) => item.roles.includes(user?.role || 'admin'))
+              .map((item) => {
               const Icon = item.icon
               const isActive = location.pathname === item.href
               return (
@@ -81,7 +87,19 @@ export default function Layout({ children, onLogout }: LayoutProps) {
 
       {/* Main content */}
       <div className="pl-64">
-        <main className="p-8">{children}</main>
+        <header className="px-8 py-4 flex items-center justify-between gap-4 border-b bg-white">
+          <TenantSelector />
+          <div className="text-right">
+            <p className="text-sm font-semibold text-gray-900">{user?.full_name}</p>
+            <p className="text-xs text-gray-500 uppercase">{user?.role}</p>
+          </div>
+        </header>
+        <div className="px-8 pt-4">
+          <SystemStatusBar watchKeys={watchKeys} />
+        </div>
+        <main className="p-8">
+          <Outlet />
+        </main>
       </div>
     </div>
   )
