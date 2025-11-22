@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { telemetry } from '../lib/telemetry'
+import type { UserRole } from '../types'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -44,6 +45,8 @@ export const authAPI = {
     api.post('/auth/login', new URLSearchParams({ username, password }), {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     }),
+  register: (data: { email: string; password: string; full_name: string; role: UserRole }) =>
+    api.post('/auth/register', data),
   getMe: () => api.get('/auth/me'),
 }
 

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Download, Loader2 } from 'lucide-react'
 import { useMutation } from '@tanstack/react-query'
 import { reportsAPI } from '../services/api'
+import { formatApiError } from '../lib/errorUtils'
 import { useAuth } from '../hooks/useAuth'
 import { ReportSummary } from '../types'
 import InlineAlert from '../components/InlineAlert'
@@ -130,7 +131,7 @@ export default function Reports() {
             <InlineAlert
               variant="error"
               title="Report failed"
-              description={(mutation.error as any)?.response?.data?.detail || 'Retry with a valid ID or check monitoring widgets.'}
+              description={formatApiError(mutation.error, 'Retry with a valid ID or check monitoring widgets.')}
             />
           )}
         </div>

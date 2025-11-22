@@ -1,6 +1,7 @@
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
+import { formatApiError } from '../lib/errorUtils'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -27,7 +28,7 @@ export default function Login() {
       await login(email, password)
       navigate(redirectPath, { replace: true })
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Login failed')
+      setError(formatApiError(err, 'Login failed'))
     } finally {
       setLoading(false)
     }
@@ -82,13 +83,19 @@ export default function Login() {
           </button>
         </form>
 
-        <div className="mt-6 text-center text-sm text-gray-600">
+        <div className="mt-6 text-center text-sm text-gray-600 space-y-3">
           <p>
             Need access? Contact the platform admin or review the{' '}
             <a className="text-primary-600 underline" href="/DOCUMENTATION.md" target="_blank" rel="noreferrer">
               resiliency playbook
             </a>{' '}
             to request a secure reset.
+          </p>
+          <p>
+            New to MoveInSync?{' '}
+            <Link to="/register" className="text-primary-600 font-semibold">
+              Create an account
+            </Link>
           </p>
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react'
 import { authAPI, clientsAPI } from '../services/api'
 import { Client, User } from '../types'
+import { formatApiError } from '../lib/errorUtils'
 
 interface AuthContextValue {
   user: User | null
@@ -49,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       localStorage.removeItem('token')
       setUser(null)
-      setBootstrapError(error?.response?.data?.detail || 'Authentication expired')
+      setBootstrapError(formatApiError(error, 'Authentication expired'))
     } finally {
       setIsBootstrapping(false)
     }

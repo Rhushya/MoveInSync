@@ -5,6 +5,7 @@ import { Client } from '../types'
 import { Plus, RefreshCw } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import InlineAlert from '../components/InlineAlert'
+import { formatApiError } from '../lib/errorUtils'
 
 export default function Clients() {
   const { selectedTenantId } = useAuth()
@@ -106,7 +107,7 @@ export default function Clients() {
             <InlineAlert
               variant="error"
               title="Client creation failed"
-              description={(mutation.error as any)?.response?.data?.detail || 'Ensure the code is unique and try again.'}
+              description={formatApiError(mutation.error, 'Ensure the code is unique and try again.')}
             />
           )}
         </div>
