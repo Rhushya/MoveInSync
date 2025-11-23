@@ -4,7 +4,7 @@ from app.db.session import SessionLocal
 from app.models.user import User, UserRole
 
 DEFAULT_EMAIL = "admin@moveinsync.com"
-DEFAULT_PASSWORD = "admin123"
+DEFAULT_PASSWORD = "123"
 DEFAULT_NAME = "MoveInSync Admin"
 
 

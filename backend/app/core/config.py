@@ -1,4 +1,5 @@
 from typing import Any, List
+from pathlib import Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
@@ -40,6 +41,18 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+
+    def model_post_init(self, __context: Any) -> None:
+        """Normalize sqlite URLs so relative paths resolve from backend root."""
+        if self.DATABASE_URL.startswith("sqlite:///"):
+            raw_path = self.DATABASE_URL.replace("sqlite:///", "", 1)
+            path_obj = Path(raw_path)
+            if not path_obj.is_absolute():
+                base_dir = Path(__file__).resolve().parents[2]
+                path_obj = (base_dir / path_obj).resolve()
+            # sqlite URLs expect forward slashes regardless of platform
+            normalized = path_obj.as_posix()
+            self.DATABASE_URL = f"sqlite:///{normalized}"
 
 
 settings = Settings()

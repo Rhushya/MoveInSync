@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { tripsAPI, billingModelsAPI } from '../services/api'
 import { BillingModel, Trip } from '../types'
@@ -20,6 +20,7 @@ export default function Trips() {
   const [statusFilter, setStatusFilter] = useState<'all' | Trip['status']>('all')
   const [rangeFilter, setRangeFilter] = useState<'7d' | '30d' | '90d'>('7d')
   const [showForm, setShowForm] = useState(false)
+  const [clientOverride, setClientOverride] = useState('')
   const [form, setForm] = useState({
     vendor_id: '',
     employee_id: '',
@@ -33,6 +34,26 @@ export default function Trips() {
   })
   const [deleteError, setDeleteError] = useState<string | undefined>(undefined)
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    if (selectedTenantId) {
+      setClientOverride('')
+    }
+  }, [selectedTenantId])
+
+  const effectiveClientId = useMemo(() => {
+    if (selectedTenantId) {
+      return selectedTenantId
+    }
+    const trimmed = clientOverride.trim()
+    if (!trimmed) {
+      return undefined
+    }
+    const parsed = Number(trimmed)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }, [selectedTenantId, clientOverride])
+
+  const tripsQueryKey = `trips-${effectiveClientId ?? 'all'}-${statusFilter}-${rangeFilter}`
 
   const dateWindow = useMemo(() => {
     const now = new Date()
@@ -48,9 +69,9 @@ export default function Trips() {
   }, [rangeFilter])
 
   const { data, isLoading } = useQuery({
-    queryKey: [`trips-${selectedTenantId || 'all'}-${statusFilter}-${rangeFilter}`],
+    queryKey: [tripsQueryKey],
     queryFn: () => tripsAPI.getAll({
-      client_id: selectedTenantId,
+      client_id: effectiveClientId,
       status: statusFilter === 'all' ? undefined : statusFilter,
       start_date: dateWindow.start,
       end_date: dateWindow.end,
@@ -99,14 +120,14 @@ export default function Trips() {
   const createMutation = useMutation({
     mutationFn: tripsAPI.create,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`trips-${selectedTenantId || 'all'}-${statusFilter}`] })
+      queryClient.invalidateQueries({ queryKey: [tripsQueryKey] })
       setShowForm(false)
       setForm({ vendor_id: '', employee_id: '', trip_date: '', pickup_location: '', drop_location: '', pickup_time: '', drop_time: '', distance_km: '', duration_hours: '' })
     },
   })
 
   const tripFormIsValid = Boolean(
-    selectedTenantId &&
+    effectiveClientId !== undefined &&
     form.vendor_id &&
     form.employee_id &&
     form.trip_date &&
@@ -119,7 +140,7 @@ export default function Trips() {
     onMutate: () => setDeleteError(undefined),
     onError: (error: any) => setDeleteError(error?.response?.data?.detail || 'Unable to delete trip'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`trips-${selectedTenantId || 'all'}-${statusFilter}`] })
+      queryClient.invalidateQueries({ queryKey: [tripsQueryKey] })
     },
   })
 
@@ -130,7 +151,7 @@ export default function Trips() {
         <p className="text-gray-600 mt-2">Tenant-scoped trip timelines with live telemetry</p>
       </div>
 
-      <SystemStatusBar watchKeys={[`trips-${selectedTenantId || 'all'}-${statusFilter}-${rangeFilter}`]} />
+      <SystemStatusBar watchKeys={[tripsQueryKey]} />
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl border border-gray-100 p-4">
@@ -193,6 +214,18 @@ export default function Trips() {
 
       {showForm && (
         <div className="bg-white rounded-lg shadow p-6 space-y-4">
+          {!selectedTenantId && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Client ID (admin override)</label>
+              <input
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={clientOverride}
+                onChange={(e) => setClientOverride(e.target.value)}
+                placeholder="Enter a client id when no tenant is selected"
+              />
+              <p className="text-xs text-gray-500 mt-1">Provide the client identifier you want this trip to belong to.</p>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Vendor ID</label>
@@ -277,22 +310,31 @@ export default function Trips() {
               />
             </div>
           </div>
-          {!selectedTenantId && (
-            <InlineAlert variant="warning" title="Select a tenant" description="Choose a tenant in the status bar before creating trips." />
+          {effectiveClientId === undefined && (
+            <InlineAlert
+              variant="warning"
+              title="Client required"
+              description="Select a tenant in the header or enter a client ID above before creating trips."
+            />
           )}
           <button
-            onClick={() => createMutation.mutate({
-              client_id: selectedTenantId,
-              vendor_id: Number(form.vendor_id),
-              employee_id: Number(form.employee_id),
-              trip_date: form.trip_date ? new Date(form.trip_date).toISOString() : new Date().toISOString(),
-              pickup_location: form.pickup_location,
-              drop_location: form.drop_location,
-              pickup_time: form.pickup_time ? new Date(form.pickup_time).toISOString() : undefined,
-              drop_time: form.drop_time ? new Date(form.drop_time).toISOString() : undefined,
-              distance_km: form.distance_km ? Number(form.distance_km) : undefined,
-              duration_hours: form.duration_hours ? Number(form.duration_hours) : undefined,
-            })}
+            onClick={() => {
+              if (effectiveClientId === undefined) {
+                return
+              }
+              createMutation.mutate({
+                client_id: effectiveClientId,
+                vendor_id: Number(form.vendor_id),
+                employee_id: Number(form.employee_id),
+                trip_date: form.trip_date ? new Date(form.trip_date).toISOString() : new Date().toISOString(),
+                pickup_location: form.pickup_location,
+                drop_location: form.drop_location,
+                pickup_time: form.pickup_time ? new Date(form.pickup_time).toISOString() : undefined,
+                drop_time: form.drop_time ? new Date(form.drop_time).toISOString() : undefined,
+                distance_km: form.distance_km ? Number(form.distance_km) : undefined,
+                duration_hours: form.duration_hours ? Number(form.duration_hours) : undefined,
+              })
+            }}
             disabled={createMutation.isPending || !tripFormIsValid}
             className="bg-primary-600 text-white px-4 py-2 rounded-lg disabled:opacity-60"
           >
@@ -313,14 +355,14 @@ export default function Trips() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pickup</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Drop</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Distance</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fare</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Projected Total</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pickup</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Drop</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Distance</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fare</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Computed</th>
+                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
