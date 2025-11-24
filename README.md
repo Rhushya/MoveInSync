@@ -416,4 +416,12 @@ For issues and questions, please create an issue in the repository.
 - Billing algorithm implementation
 - React/TypeScript frontend
 - Docker containerization
-- Production-ready architecture" 
+- Production-ready architecture"
+
+  ## Demo
+
+
+
+https://github.com/user-attachments/assets/57b1115b-a214-49b0-a815-ee049cbe6d3e
+
+
